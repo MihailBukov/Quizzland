@@ -1,0 +1,17 @@
+<div class="topbar">
+    <div *ngIf="isLoggedIn(); else notLoggedIn">
+      <button (click)="goToMarketplace()">Marketplace</button>
+      <button (click)="createLobby()">Create Lobby</button>
+      <button (click)="joinLobby()">Join Lobby</button>
+      <button (click)="createQuiz()">Create Quiz</button>
+      <div class="profile-button">
+        <button (click)="goToProfile()">Profile</button>
+      </div>
+    </div>
+    <ng-template #notLoggedIn>
+        <div class="not-logged-in">
+            <button class="login-button" (click)="goToLogin()">Login</button>
+            <button class="register-button" (click)="goToRegister()">Register</button>
+        </div>
+    </ng-template>
+  </div>

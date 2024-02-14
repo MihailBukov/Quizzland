@@ -1,0 +1,24 @@
+.topbar {
+    display: flex;
+    padding: 10px 20px;
+    background-color: #000000;
+    color: #fff;
+  }
+  
+  button {
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    color: #fff;
+  }
+  
+  .not-logged-in {
+    float: right;
+    margin: 5px;
+  }
+  
+  .profile-button {
+    position: absolute;
+    right: 50px;
+    margin-bottom: 100px;
+  }
