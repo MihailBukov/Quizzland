@@ -2,37 +2,64 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"time"
 	"unicode"
 
-	"github.com/gorilla/sessions"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
-var store = sessions.NewCookieStore([]byte("secret-key"))
+func DoesUserHaveValidCookie(r *http.Request) bool {
+	cookie, err := r.Cookie("token")
+        if err != nil {
+            return false
+        }
 
-func Init() {
+        tokenString := cookie.Value
 
-	store.Options = &sessions.Options{
-	 Domain:   "127.0.0.1",
-	 Path:     "/",
-	 MaxAge:   3600 * 8, // 8 hours
-	 HttpOnly: true,
- 	}
+        claims := &Claims{}
+        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+            return []byte("SECRET_KEY"), nil
+        })
+
+		if err != nil {
+			return false
+		}
+
+		return token.Valid
 }
 
-func Login(body *LoginRequest) (uint, string, error) {
+func Login(body *LoginRequest) (string, time.Time, error) {
 	acc, err := Db.GetAccountByUsername(body.Username)
 	if err != nil {
-		return 0, "", errors.New("invalid username or password")
+		return "", time.Time{}, errors.New("invalid username or password")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(acc.Password), []byte(body.Password))
 	if err != nil {
-		return 0, "", errors.New("invalid username or password")
+		return "", time.Time{}, errors.New("invalid username or password")
 	}
 
-	return acc.Id, acc.Role, nil
+	expirationTime := time.Now().Add(2 * time.Hour)
+ 
+    claims := &Claims{
+        Id: acc.Id,
+        Role:     acc.Role,
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(expirationTime),
+        },
+    }
+ 
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    tokenString, err := token.SignedString([]byte("SECRET_KEY"))
+ 
+    if err != nil {
+        return "", time.Time{}, err
+    }
+
+	return tokenString, expirationTime, nil
 }
 
 func CreateAccount(request *CreateAccountRequest, role string) error {

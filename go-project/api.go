@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 )
@@ -23,26 +25,25 @@ func NewApiServer(listenAddr string) *APIServer {
 }
 
 func (s *APIServer) Run() {
-	Init()
 	manager = NewManager()
 	router := mux.NewRouter()
-	router.HandleFunc("/api/users/{username}", Auth(RoleAssignment(handleUser))).Methods("GET", "DELETE", "PUT")
-	router.HandleFunc("/api/users", Auth(RoleAssignment(handleUser))).Methods("POST")
-	router.HandleFunc("/api/deposit", Auth(RoleAssignment(handleDeposit))).Methods("POST")
-	router.HandleFunc("/quizzes/sell", Auth(RoleAssignment(handleSellQuiz))).Methods("POST")
-	router.HandleFunc("/quizzes/buy", Auth(RoleAssignment(handleBuyQuiz))).Methods("POST")
-	router.HandleFunc("/api/quizzes/{id}", Auth(RoleAssignment(handleQuizzes))).Methods("GET", "DELETE")
-	router.HandleFunc("/api/quizzes", Auth(RoleAssignment(handleQuizzes))).Methods("POST", "PUT")
-	router.HandleFunc("/api/register", RoleAssignment(handleRegister)).Methods("POST")
+	router.HandleFunc("/api/users/{username}", Auth(handleUser)).Methods("GET", "DELETE", "PUT")
+	router.HandleFunc("/api/users", Auth(handleUser)).Methods("POST")
+	router.HandleFunc("/api/deposit", Auth(handleDeposit)).Methods("POST")
+	router.HandleFunc("/quizzes/sell", Auth(handleSellQuiz)).Methods("POST")
+	router.HandleFunc("/quizzes/buy", Auth(handleBuyQuiz)).Methods("POST")
+	router.HandleFunc("/api/quizzes/{id}", Auth(handleQuizzes)).Methods("GET", "DELETE")
+	router.HandleFunc("/api/quizzes", Auth(handleQuizzes)).Methods("POST", "PUT")
+	router.HandleFunc("/api/register", handleRegister).Methods("POST")
 	router.HandleFunc("/api/login", handleLogin).Methods("POST")
-	router.HandleFunc("/api/logout", Auth(RoleAssignment(handleLogout))).Methods("GET")
-	router.HandleFunc("/quiz/comments", Auth(RoleAssignment(handleComments))).Methods("POST")
-	router.HandleFunc("/quiz/comments/{id}", Auth(RoleAssignment(handleComments))).Methods("GET", "DELETE", "PATCH")
-	router.HandleFunc("/quiz/ratings", Auth(RoleAssignment(handleRatings))).Methods("POST")
-	router.HandleFunc("/quiz/ratings/{id}", Auth(RoleAssignment(handleRatings))).Methods("GET", "DELETE", "PATCH")
-	router.HandleFunc("/game/create", Auth(RoleAssignment(handleCreateGame))).Methods("POST")
-	router.HandleFunc("/game/{gameCode}/join", Auth(RoleAssignment(handleJoinGame))).Methods("POST")
-	router.HandleFunc("/game/{gameCode}/start", Auth(RoleAssignment(handleStartGame))).Methods("POST")
+	router.HandleFunc("/api/logout", Auth(handleLogout)).Methods("GET")
+	router.HandleFunc("/quiz/comments", Auth(handleComments)).Methods("POST")
+	router.HandleFunc("/quiz/comments/{id}", Auth(handleComments)).Methods("GET", "DELETE", "PATCH")
+	router.HandleFunc("/quiz/ratings", Auth(handleRatings)).Methods("POST")
+	router.HandleFunc("/quiz/ratings/{id}", Auth(handleRatings)).Methods("GET", "DELETE", "PATCH")
+	router.HandleFunc("/game/create", Auth(handleCreateGame)).Methods("POST")
+	router.HandleFunc("/game/{gameCode}/join", Auth(handleJoinGame)).Methods("POST")
+	router.HandleFunc("/game/{gameCode}/start", Auth(handleStartGame)).Methods("POST")
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:4200"},
 		AllowCredentials: true,
@@ -53,28 +54,17 @@ func (s *APIServer) Run() {
 }
 
 func handleStartGame(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
-		userID, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
-
 		vars := mux.Vars(r)
 		gameCode := vars["gameCode"]
 
-		go StartGame(gameCode, userID)
+		go StartGame(gameCode, user.UserID)
 
 		return
 	}
@@ -83,24 +73,13 @@ func handleStartGame(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleCreateGame(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
-		userID, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
-
 		var body CreateGameRequest
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -108,7 +87,7 @@ func handleCreateGame(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		code, err := CreateGame(userID, body.QuizId)
+		code, err := CreateGame(user.UserID, body.QuizId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -123,28 +102,17 @@ func handleCreateGame(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleJoinGame(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
-		userID, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
-
 		vars := mux.Vars(r)
 		gameCode := vars["gameCode"]
 
-		if err := JoinGame(gameCode, userID); err != nil {
+		if err := JoinGame(gameCode, user.UserID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -158,31 +126,21 @@ func handleJoinGame(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSellQuiz(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
 		var body SellQuizRequest
-		userID, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if err := SellQuiz(&body, userID); err != nil {
+		if err := SellQuiz(&body, user.UserID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -194,31 +152,21 @@ func handleSellQuiz(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBuyQuiz(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
 		var body BuyQuizRequest
-		userID, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if err := BuyQuiz(&body, userID); err != nil {
+		if err := BuyQuiz(&body, user.UserID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -230,20 +178,9 @@ func handleBuyQuiz(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRatings(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
-		return
-	}
-
-	userID, ok := r.Context().Value("userID").(uint)
-	if !ok {
-		http.Error(w, "userID not found in context", http.StatusInternalServerError)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
@@ -271,7 +208,7 @@ func handleRatings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = DeleteRating(uint(id), userID, role)
+		err = DeleteRating(uint(id), user.UserID, user.Role)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -305,7 +242,7 @@ func handleRatings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := ModifyRating(&body, userID, role); err != nil {
+		if err := ModifyRating(&body, user.UserID, user.Role); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -317,20 +254,9 @@ func handleRatings(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleComments(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
-		return
-	}
-
-	userID, ok := r.Context().Value("userID").(uint)
-	if !ok {
-		http.Error(w, "userID not found in context", http.StatusInternalServerError)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
@@ -358,7 +284,7 @@ func handleComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = DeleteComment(uint(id), userID, role)
+		err = DeleteComment(uint(id), user.UserID, user.Role)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -373,7 +299,7 @@ func handleComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := CreateComment(&body, userID); err != nil {
+		if err := CreateComment(&body, user.UserID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -392,7 +318,7 @@ func handleComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := ModifyComment(&body, userID, role); err != nil {
+		if err := ModifyComment(&body, userID, user.Role); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -404,21 +330,28 @@ func handleComments(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
-	session, _ := store.Get(r, "session")
-	delete(session.Values, "userID")
-	delete(session.Values, "role")
-	session.Save(r, w)
-}
-
-func handleRegister(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
-	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
+	if !DoesUserHaveValidCookie(r) {
+		http.Error(w, "not logged in", http.StatusInternalServerError)
 		return
 	}
 
-	if role != Nuser {
-		http.Error(w, "Already logged in", http.StatusBadRequest)
+	http.SetCookie(w, &http.Cookie{
+		Name:    "token",
+		Value:   "",
+		Expires: time.Unix(0, 0),
+		Path:    "/",
+	})
+}
+
+func handleRegister(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value("user").(UserContext)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
+		return
+	}
+
+	if user.Role == Ruser {
+		http.Error(w, "already logged in", http.StatusInternalServerError)
 		return
 	}
 
@@ -429,7 +362,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := CreateAccount(&body, role); err != nil {
+		if err := CreateAccount(&body, user.Role); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -442,24 +375,9 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-	/*
-	role, ok := r.Context().Value("role").(string)
-	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-	*/
-
-	session, _ := store.Get(r, "session")
-	role := session.Values["role"]
-
-	if role == nil {
-		role = Nuser
-	}
-
-	if role != Nuser {
+	if DoesUserHaveValidCookie(r) {
 		http.Error(w, "Already logged in", http.StatusBadRequest)
-		return
+            return
 	}
 
 	if r.Method == "POST" {
@@ -470,16 +388,23 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		id, role, err := Login(&body)
+		tokenString, expTime, err := Login(&body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		session, _ := store.Get(r, "session")
-		session.Values["userID"] = id
-		session.Values["role"] = role
-		store.Save(r, w, session)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		http.SetCookie(w, &http.Cookie{
+			Name:    "token",
+			Value:   tokenString,
+			Expires: expTime,
+			Path:    "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteNoneMode,
+			Secure: true,
+		})
 
 		return
 	}
@@ -488,33 +413,21 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleQuizzes(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
 		var body CreateQuizRequest
-		session, _ := store.Get(r, "session")
-
-		userId, ok := session.Values["userID"].(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if err := CreateQuiz(&body, userId); err != nil {
+		if err := CreateQuiz(&body, user.UserID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -530,7 +443,7 @@ func handleQuizzes(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(quizzes)
 		return
 	} else if r.Method == "DELETE" {
-		if role != Admin {
+		if user.Role != Admin {
 			http.Error(w, "Missing permission", http.StatusForbidden)
 			return
 		}
@@ -560,7 +473,7 @@ func handleQuizzes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := ModifyQuiz(&body, userId, role); err != nil {
+		if err := ModifyQuiz(&body, userId, user.Role); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -572,31 +485,21 @@ func handleQuizzes(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDeposit(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role != Ruser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
 	if r.Method == "POST" {
 		var body DepositRequest
-		userId, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if err := Deposit(&body, userId); err != nil {
+		if err := Deposit(&body, user.UserID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -608,14 +511,9 @@ func handleDeposit(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUser(w http.ResponseWriter, r *http.Request) {
-	role, ok := r.Context().Value("role").(string)
+	user, ok := r.Context().Value("user").(UserContext)
 	if !ok {
-		http.Error(w, "role not found in context", http.StatusInternalServerError)
-		return
-	}
-
-	if role == Nuser {
-		http.Error(w, "Missing permission", http.StatusForbidden)
+		http.Error(w, "user not found in context", http.StatusInternalServerError)
 		return
 	}
 
@@ -632,7 +530,7 @@ func handleUser(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(acc)
 		return
 	} else if r.Method == "DELETE" {
-		if role != Admin {
+		if user.Role != Admin {
 			http.Error(w, "Missing permission", http.StatusForbidden)
 			return
 		}
@@ -650,12 +548,6 @@ func handleUser(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		username := vars["username"]
 
-		userId, ok := r.Context().Value("userID").(uint)
-		if !ok {
-			http.Error(w, "userID not found in context", http.StatusInternalServerError)
-			return
-		}
-
 		var body ModifyAccountRequest
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -663,7 +555,7 @@ func handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err := EditAccount(username, userId, role, body)
+		err := EditAccount(username, user.UserID, user.Role, body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -676,30 +568,40 @@ func handleUser(w http.ResponseWriter, r *http.Request) {
 
 func Auth(HandlerFunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session, _ := store.Get(r, "session")
-		userId, ok := session.Values["userID"]
-		if !ok {
-			http.Error(w, "invalid access token", http.StatusUnauthorized)
-			return
+        cookie, err := r.Cookie("token")
+        if err != nil {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+
+        tokenString := cookie.Value
+
+        claims := &Claims{}
+        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+            return []byte("SECRET_KEY"), nil
+        })
+        if err != nil {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+
+        if !token.Valid {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+
+		claims, ok := token.Claims.(*Claims)
+		if !ok || !token.Valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
 		}
 
-		ctx := context.WithValue(r.Context(), "userID", userId)
+		userCtx := UserContext{
+            Role:   claims.Role,
+            UserID: claims.Id,
+        }
 
-		HandlerFunc.ServeHTTP(w, r.WithContext(ctx))
-	}
-}
-
-func RoleAssignment(HandlerFunc http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		session, _ := store.Get(r, "session")
-		role, ok := session.Values["role"]
-		if !ok {
-			role = Nuser
-			session.Values["role"] = Nuser
-			session.Save(r, w)
-		}
-
-		ctx := context.WithValue(r.Context(), "role", role)
+		ctx := context.WithValue(r.Context(), "user", userCtx)
 
 		HandlerFunc.ServeHTTP(w, r.WithContext(ctx))
 	}

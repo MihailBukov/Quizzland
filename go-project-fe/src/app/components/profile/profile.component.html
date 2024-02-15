@@ -1,0 +1,15 @@
+<div *ngIf="profile">
+    <h2>{{ profile.username }}'s Profile</h2>
+    <p>First Name: {{ profile.firstName }}</p>
+    <p>Last Name: {{ profile.lastName }}</p>
+    <p>Email: {{ profile.email }}</p>
+    <p>Description: {{ profile.description }}</p>
+    <p>Balance: {{ profile.balance }}</p>
+  
+    <h3>Quizzes</h3>
+    <div *ngFor="let quiz of profile.quizzes">
+      <p>{{ quiz.name }}</p>
+    </div>
+  
+    <button (click)="updateProfile()">Save Changes</button>
+  </div>

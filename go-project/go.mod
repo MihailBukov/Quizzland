@@ -16,6 +16,7 @@ require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/go-sql-driver/mysql v1.7.1
+	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/gorilla/context v1.1.2
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1

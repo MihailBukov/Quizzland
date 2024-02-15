@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -9,6 +11,17 @@ const (
 	Ruser = "ruser"
 	Admin = "admin"
 )
+
+type UserContext struct {
+    Role   string
+    UserID uint
+}
+
+type Claims struct {
+	Id   uint   `json:"id"`
+	Role string `json:"role"`
+	jwt.RegisteredClaims
+}
 
 type Account struct {
 	Id          uint    `json:"id" gorm:"primaryKey"`
@@ -230,7 +243,7 @@ type SellQuizRequest struct {
 }
 
 type Event struct {
-	Type string `json:"type"`
+	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
 }
 

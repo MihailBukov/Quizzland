@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
 
 interface LoginRequest {
   username: string;
@@ -18,20 +19,17 @@ export class LoginComponent {
   };
   errorMessage: string = '';
 
-  constructor(private http: HttpClient) { }
+  constructor(private router: Router, private http: HttpClient) { }
 
   login() {
-    // Send login request to backend
-    this.http.post<any>('http://127.0.0.1:3000/api/login', this.loginData)
+    this.http.post<any>('http://127.0.0.1:3000/api/login', this.loginData, {
+      withCredentials: true
+    })
       .subscribe(
         response => {
-          // Handle successful login
-          console.log('Login successful:', response);
-          // You can perform additional actions after successful login
+          this.router.navigate(['marketplace']);
         },
         error => {
-          // Handle login error
-          console.error('Login error:', error);
           this.errorMessage = 'Invalid username or password';
         }
       );
